@@ -1,0 +1,34 @@
+serve:
+  public:
+    host: 0.0.0.0
+    port: 4444
+    cors:
+      enabled: true
+      allowed_origins:
+        - http://localhost:4445
+        - http://127.0.0.1:4445
+  admin:
+    host: 0.0.0.0
+    port: 4445
+urls:
+  self:
+    issuer: http://localhost:4444/
+  login: http://localhost:4445/login
+  consent: http://localhost:4445/consent
+strategies:
+  access_token: jwt
+  scope: exact
+webfinger:
+  oidc_discovery:
+    supported_scope:
+      - openid
+      - profile
+      - email
+      - offline_access
+    supported_claims:
+      - sub
+      - email
+      - preferred_username
+log:
+  level: info
+  format: json

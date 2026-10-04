@@ -1,0 +1,39 @@
+services:
+  scylla:
+    image: scylladb/scylla:2026.1
+    command: ["--developer-mode=1", "--overprovisioned=1", "--smp=1"]
+    ports:
+      - "${GITSTORE_HOST_SCYLLA_PORT:-9042}:9042"
+    volumes:
+      - scylla-data:/var/lib/scylla
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe cluster'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks: [gitstore]
+
+  scylla-init:
+    image: scylladb/scylla:2026.1
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        cqlsh scylla -e "CREATE KEYSPACE IF NOT EXISTS gitstore WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};"
+    depends_on:
+      scylla:
+        condition: service_healthy
+    networks: [gitstore]
+    restart: "no"
+
+  api:
+    depends_on:
+      scylla-init:
+        condition: service_completed_successfully
+
+  controller-manager:
+    depends_on:
+      scylla-init:
+        condition: service_completed_successfully
+
+volumes:
+  scylla-data:
