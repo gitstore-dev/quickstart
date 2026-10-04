@@ -26,7 +26,12 @@ export CONFIG_FILES = /etc/gitstore/gitstore.toml$(DATASTORE_CONFIG_FILE)$(IDENT
 
 COMPOSE = docker compose --profile local -f compose.yml -f compose.local.yml $(DATASTORE_COMPOSE_FILE) $(IDENTITY_COMPOSE_FILE)
 
-.PHONY: validate up down logs ps config pull clean
+.PHONY: help validate up down logs ps config pull clean
+
+.DEFAULT_GOAL := help
+
+help: ## Show this help
+	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*##"}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
 
 validate:
 	@case "$(DATASTORE)" in memdb|scylla) ;; *) echo "DATASTORE must be 'memdb' or 'scylla'" >&2; exit 2;; esac
