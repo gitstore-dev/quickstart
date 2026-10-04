@@ -1,0 +1,22 @@
+# Override for the "oidc" profile. Merged on top of configs/gitstore.toml
+# (api/controller-manager/git-service are started with --config-file passed
+# twice: the base file, then this one).
+
+[auth.authn]
+chain = ["oidc-jwt", "static-users", "serviceaccount-assertion", "serviceaccount-jwt", "anonymous"]
+
+[auth.oidc]
+# "localhost" here is deliberate, not a mistake: tokens carry iss=http://localhost:4444/
+# (the browser-reachable Hydra issuer URL), so the api container resolves it to the host
+# via `extra_hosts: ["localhost:host-gateway"]` in compose.oidc.yml.
+issuer_uri = "http://localhost:4444/"
+client_id = "gitstore"
+audience = "gitstore"
+clock_skew = "2m"
+# "sub" is the raw Kratos identity UUID - not something a person testing this profile can
+# predict or recognize. "preferred_username" is what they registered with, so they can see
+# their own identity in logs/tokens and know exactly what to put in policy.yaml's
+# role_bindings. It isn't in Hydra's JWT access token directly, but gitstore-api's oidc-jwt
+# provider falls back to the issuer's /userinfo endpoint for claims missing from the raw
+# token, and oidc-bridge does populate preferred_username there from the Kratos identity.
+username_claim = "preferred_username"

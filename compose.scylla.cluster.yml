@@ -1,0 +1,73 @@
+services:
+  scylla-1:
+    image: scylladb/scylla:2026.1
+    command: ["--seeds=scylla-1", "--developer-mode=1", "--overprovisioned=1", "--smp=${SCYLLA_CLUSTER_SMP:-1}", "--max-networking-io-control-blocks=${SCYLLA_CLUSTER_MAX_NETWORKING_IO_CONTROL_BLOCKS:-2048}"]
+    volumes:
+      - scylla-1-data:/var/lib/scylla
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe cluster'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks: [gitstore]
+
+  scylla-2:
+    image: scylladb/scylla:2026.1
+    command: ["--seeds=scylla-1", "--developer-mode=1", "--overprovisioned=1", "--smp=${SCYLLA_CLUSTER_SMP:-1}", "--max-networking-io-control-blocks=${SCYLLA_CLUSTER_MAX_NETWORKING_IO_CONTROL_BLOCKS:-2048}"]
+    volumes:
+      - scylla-2-data:/var/lib/scylla
+    depends_on:
+      scylla-1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe cluster'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks: [gitstore]
+
+  scylla-3:
+    image: scylladb/scylla:2026.1
+    command: ["--seeds=scylla-1", "--developer-mode=1", "--overprovisioned=1", "--smp=${SCYLLA_CLUSTER_SMP:-1}", "--max-networking-io-control-blocks=${SCYLLA_CLUSTER_MAX_NETWORKING_IO_CONTROL_BLOCKS:-2048}"]
+    volumes:
+      - scylla-3-data:/var/lib/scylla
+    depends_on:
+      scylla-1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe cluster'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks: [gitstore]
+
+  scylla-init:
+    image: scylladb/scylla:2026.1
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        cqlsh scylla-1 -e "CREATE KEYSPACE IF NOT EXISTS gitstore WITH replication = {'class': 'NetworkTopologyStrategy', 'datacenter1': 3};"
+    depends_on:
+      scylla-1:
+        condition: service_healthy
+      scylla-2:
+        condition: service_healthy
+      scylla-3:
+        condition: service_healthy
+    networks: [gitstore]
+    restart: "no"
+
+  api:
+    depends_on:
+      scylla-init:
+        condition: service_completed_successfully
+
+  controller-manager:
+    depends_on:
+      scylla-init:
+        condition: service_completed_successfully
+
+volumes:
+  scylla-1-data:
+  scylla-2-data:
+  scylla-3-data:

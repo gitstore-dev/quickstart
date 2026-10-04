@@ -1,0 +1,93 @@
+# GitStore "local" profile: memdb datastore + static-users auth.
+# Demo-only secrets below — fine for `docker compose up`, do not reuse beyond local testing.
+
+[grpc]
+port = 50051
+
+[git]
+data_dir = "/var/lib/gitstore/repos"
+
+[git.repo]
+max_file_size = 52428800
+max_pack_size_bytes = 52428800
+
+[git.grpc]
+uri = "dns:///git-service:50051"
+
+[catalog_service]
+uri = "http://api:6000"
+
+[api]
+port = 4000
+git_port = 9000
+grpc_port = 6000
+rate_limit_per_second = 50
+rate_limit_burst = 100
+
+[datastore]
+backend = "memdb"
+
+[auth.staticusers]
+users_file = "/etc/gitstore/users.yaml"
+
+[auth.jwt]
+secret = "1Hc/mc4CVCcAwJFiB4JAxu1+JXW4htVhYsSEu8GkIf8="
+duration = "24h"
+issuer = "gitstore"
+refresh_grace = "60s"
+
+[auth.grpc]
+hmac_secret = "zY9C6EAryWsZAuGKYvdMWqqku5Zl/0HW3A0fRjAIVZM="
+
+[auth.authn]
+chain = ["static-users", "serviceaccount-assertion", "serviceaccount-jwt", "anonymous"]
+
+[auth.serviceaccount]
+issuer = "gitstore"
+audience = "gitstore-api"
+assertion_audience = "gitstore-api/serviceaccount-token"
+
+[auth.authz]
+provider = "rbac-local"
+
+[auth.userdir]
+provider = "static-users"
+
+[auth.rbac]
+policy_file = "/etc/gitstore/policy.yaml"
+
+[controller]
+port = 5001
+api_uri = "http://api:4000/graphql"
+
+[controller.serviceaccount]
+namespace = "controllers"
+name = "gitstore-controller-manager"
+key_id = "controller-key"
+key_ref = { kind = "SecretRef", name = "gitstore-controller-manager-signing-key", key = "privateKey" }
+assertion_audience = "gitstore-api/serviceaccount-token"
+access_token_audience = "gitstore-api"
+
+[controller.reconcile]
+max_attempts = 5
+stall_threshold = "5m"
+
+[controller.checkpoint]
+dir = "/var/lib/gitstore/checkpoints"
+flush_interval_events = 100
+
+[controller.watch]
+max_backoff = "30s"
+resync_interval = "10m"
+
+[controller.secret_providers.bootstrap]
+type = "file"
+format = "raw"
+base_path = "/run/secrets"
+
+[features]
+namespace_repository_fence = "auto"
+
+[log]
+level = "info"
+format = "json"

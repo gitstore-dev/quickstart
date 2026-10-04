@@ -1,0 +1,31 @@
+# Override for the "scylla" profile. Merged on top of configs/gitstore.toml
+# (api/controller-manager/git-service are started with --config-file passed
+# twice: the base file, then this one).
+
+[datastore]
+backend = "scylla"
+
+[datastore.scylla]
+hosts = "scylla:9042"
+keyspace = "gitstore"
+
+[watch.namespace]
+readers_enabled = true
+materializer_enabled = true
+journal_retention_seconds = 604800
+cdc_retention_seconds = 1209600
+cdc_confidence_window_millis = 500
+bucket_size = 4096
+read_batch_size = 256
+max_replay_events = 100000
+subscriber_buffer = 64
+subscriber_backpressure_millis = 30000
+poll_min_millis = 100
+poll_max_millis = 2000
+bookmark_interval_seconds = 30
+lease_ttl_seconds = 30
+lease_renew_interval_seconds = 10
+max_materializer_lag_seconds = 60
+
+[features]
+namespace_repository_fence = "enabled"

@@ -1,0 +1,72 @@
+name: gitstore
+
+services:
+  git-service:
+    image: ghcr.io/gitstore-dev/git-service:${GITSTORE_TAG:-latest}
+    # Unlike api/controller-manager, git-service's CLI doesn't accept --config-file more
+    # than once - and it only reads base-level settings (grpc port, git.*, auth.grpc), none
+    # of which any profile override changes - so it only ever needs the base config file.
+    command: ["/app/git-service", "--config-file", "/etc/gitstore/gitstore.toml"]
+    volumes:
+      - gitstore-repos:/var/lib/gitstore/repos
+      - ./configs:/etc/gitstore:ro
+    networks: [gitstore]
+
+  api:
+    image: ghcr.io/gitstore-dev/api:${GITSTORE_TAG:-latest}
+    environment:
+      - CONFIG_FILES
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        : "$${CONFIG_FILES:=/etc/gitstore/gitstore.toml}"
+        set --
+        for f in $$CONFIG_FILES; do set -- "$$@" --config-file "$$f"; done
+        exec /app/api "$$@"
+    ports:
+      - "${GITSTORE_HOST_API_GRAPHQL_PORT:-4000}:4000"
+      - "${GITSTORE_HOST_API_GIT_PORT:-9000}:9000"
+    volumes:
+      - gitstore-repos:/var/lib/gitstore/repos
+      - ./configs:/etc/gitstore:ro
+    depends_on:
+      git-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4000/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [gitstore]
+
+  controller-manager:
+    image: ghcr.io/gitstore-dev/controller-manager:${GITSTORE_TAG:-latest}
+    environment:
+      - CONFIG_FILES
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        : "$${CONFIG_FILES:=/etc/gitstore/gitstore.toml}"
+        set --
+        for f in $$CONFIG_FILES; do set -- "$$@" --config-file "$$f"; done
+        exec /app/controller-manager "$$@"
+    volumes:
+      - ./configs:/etc/gitstore:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5001/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [gitstore]
+
+networks:
+  gitstore:
+    name: gitstore
+
+volumes:
+  gitstore-repos:
