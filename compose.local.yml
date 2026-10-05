@@ -6,10 +6,10 @@ services:
       - /bin/sh
       - -ec
       - |
-        mkdir -p /run/controller-secrets/gitstore-controller-manager-signing-key
         rm -f /run/controller-bootstrap/serviceaccount.env
         /app/gitctl generate-signing-key --private-key-path /run/api-issuer/serviceaccount-signing-key
-        /app/gitctl generate-signing-key --private-key-path /run/controller-secrets/gitstore-controller-manager-signing-key/privateKey
+        /app/gitctl generate-signing-key --private-key-path /run/controller-secrets/gitstore-controller-manager-signing-key \
+          --record-output-path /run/controller-secrets/gitstore-controller-manager-signing-key.json --key-id controller-key
     volumes:
       - api-serviceaccount-issuer-key:/run/api-issuer
       - controller-serviceaccount-secrets:/run/controller-secrets
@@ -20,22 +20,24 @@ services:
     profiles: [local]
     image: ghcr.io/gitstore-dev/api:${GITSTORE_TAG:-latest}
     environment:
-      ADMIN_USERNAME: ${GITSTORE_BOOTSTRAP_ADMIN_USERNAME:-admin}
-      ADMIN_PASSWORD: ${GITSTORE_BOOTSTRAP_ADMIN_PASSWORD:-admin123}
+      GITSTORE_BOOTSTRAP_ADMIN_USERNAME: ${GITSTORE_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      GITSTORE_BOOTSTRAP_ADMIN_PASSWORD: ${GITSTORE_BOOTSTRAP_ADMIN_PASSWORD:-admin123}
     command:
-      - /bin/sh
-      - -ec
-      - |
-        # gitctl enroll-serviceaccount's --admin-username/--admin-password path
-        # always fails with "bootstrap authentication failed" on this image - log
-        # in via GraphQL directly instead and pass the token with --admin-token.
-        payload='{"query":"mutation { login(input:{username:\"'"$$ADMIN_USERNAME"'\",password:\"'"$$ADMIN_PASSWORD"'\"}) { token { accessToken } } }"}'
-        token="$$(wget -q -O- --header='Content-Type: application/json' --post-data="$$payload" http://api:4000/graphql | sed -n 's/.*"accessToken":"\([^"]*\)".*/\1/p')"
-        test -n "$$token"
-        exec /app/gitctl enroll-serviceaccount --api-url http://api:4000/graphql --admin-token "$$token" \
-          --namespace controllers --name gitstore-controller-manager --key-id controller-key \
-          --replace-existing-key --private-key-path /run/controller-secrets/gitstore-controller-manager-signing-key/privateKey \
-          --identity-output-path /run/controller-bootstrap/serviceaccount.env
+      - /app/gitctl
+      - enroll-serviceaccount
+      - --api-url
+      - http://api:4000/graphql
+      - --namespace
+      - controllers
+      - --name
+      - gitstore-controller-manager
+      - --key-id
+      - controller-key
+      - --replace-existing-key
+      - --private-key-path
+      - /run/controller-secrets/gitstore-controller-manager-signing-key
+      - --identity-output-path
+      - /run/controller-bootstrap/serviceaccount.env
     depends_on:
       api:
         condition: service_healthy

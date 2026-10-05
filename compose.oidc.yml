@@ -141,9 +141,10 @@ services:
     networks: [gitstore]
 
   oidc-bridge:
-    # oidc-bridge ships from a separate optional-images pipeline that hasn't cut a
-    # versioned/latest tag yet (only `main`/`main-<sha>` so far) - override once it does.
-    image: ghcr.io/gitstore-dev/oidc-bridge:${GITSTORE_OIDC_BRIDGE_TAG:-main}
+    # oidc-bridge ships from a separate optional-images pipeline (cd-optional.yml) from
+    # the core images, so its tags can drift independently - kept as its own override
+    # var rather than reusing GITSTORE_TAG.
+    image: ghcr.io/gitstore-dev/oidc-bridge:${GITSTORE_OIDC_BRIDGE_TAG:-latest}
     ports:
       - "${GITSTORE_HOST_OIDC_BRIDGE_PORT:-4445}:4445"
     environment:
