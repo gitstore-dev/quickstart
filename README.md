@@ -121,9 +121,9 @@ Requires secrets in `.env` with no defaults (see `env.example`) — generate eac
 `openssl rand -hex 32` (hex, not base64 — two of these land directly in an unencoded postgres
 DSN, and base64's `/`/`+` breaks that).
 
-`oidc-bridge` ships from a separate optional-images pipeline that hasn't cut a versioned/`latest`
-tag yet — it currently defaults to `GITSTORE_OIDC_BRIDGE_TAG=main`, independent of `GITSTORE_TAG`.
-Override it in `.env` once a real release tag exists.
+`oidc-bridge` ships from a separate optional-images pipeline from the core images, so it has
+its own `GITSTORE_OIDC_BRIDGE_TAG` (default `latest`) independent of `GITSTORE_TAG` — its tags
+can drift from the core images' release cadence.
 
 ## Configuration
 
