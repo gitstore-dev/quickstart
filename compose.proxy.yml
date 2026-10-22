@@ -1,0 +1,31 @@
+# Apply after the base/local/datastore overlays. Only Caddy publishes host ports.
+services:
+  api:
+    ports: !reset []
+
+  proxy:
+    build:
+      context: ./docker/proxy
+    image: gitstore-quickstart-caddy:local
+    entrypoint: [/bin/sh, /etc/caddy/start.sh]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./configs/proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./configs/proxy/start.sh:/etc/caddy/start.sh:ro
+      - proxy-data:/data
+      - proxy-config:/config
+      - proxy-ca:/trust
+    healthcheck:
+      test: [CMD-SHELL, "test -s /trust/root.crt && wget -q -O /dev/null http://127.0.0.1:8080/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks: [gitstore]
+
+volumes:
+  proxy-data:
+  proxy-config:
+  # Only the public CA certificate is shared with API clients, never CA private keys.
+  proxy-ca:

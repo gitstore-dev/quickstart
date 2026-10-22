@@ -1,0 +1,35 @@
+{
+	admin off
+	skip_install_trust
+}
+
+# Internal readiness endpoint; this port is never published.
+:8080 {
+	respond /health "ready" 200
+}
+
+localhost {
+	tls internal
+
+	route {
+		@graphql path /admin/api /admin/api/
+		handle @graphql {
+			# Keep GitStore's native authn/RBAC, including bearer tokens.
+			rewrite * /graphql
+			reverse_proxy api:4000
+		}
+
+		# Mounted only by compose.proxy.oidc.yml; unmatched globs are allowed.
+		import /etc/caddy/oidc/*.caddy
+
+		@git path_regexp git ^/[^/]+/[^/]+/(info/refs|git-upload-pack|git-receive-pack)$
+		handle @git {
+			# No request buffering or additional upload-size limit.
+			reverse_proxy api:9000 {
+				flush_interval -1
+			}
+		}
+
+		respond "Not found" 404
+	}
+}

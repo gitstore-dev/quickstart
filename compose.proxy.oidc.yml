@@ -1,0 +1,55 @@
+# Applied last, only with PROXY=caddy IDENTITY=oidc.
+services:
+  proxy:
+    environment:
+      GITSTORE_PROXY_OPERATOR_USERNAME: ${GITSTORE_PROXY_OPERATOR_USERNAME:?set a dedicated proxy operator username in .env}
+      GITSTORE_PROXY_OPERATOR_PASSWORD_HASH: ${GITSTORE_PROXY_OPERATOR_PASSWORD_HASH:?set the proxy operator bcrypt hash in .env}
+    volumes:
+      - ./configs/proxy/oidc.caddy:/etc/caddy/oidc/routes.caddy:ro
+
+  api:
+    environment:
+      GITSTORE_AUTH__OIDC__ISSUER_URI: https://localhost/sso/
+      SSL_CERT_FILE: /run/proxy-ca/root.crt
+    volumes:
+      - proxy-ca:/run/proxy-ca:ro
+    depends_on:
+      proxy:
+        condition: service_healthy
+
+  hydra:
+    ports: !reset []
+    environment:
+      URLS_SELF_ISSUER: https://localhost/sso/
+      URLS_SELF_PUBLIC: https://localhost/sso/
+      URLS_LOGIN: https://localhost/login
+      URLS_CONSENT: https://localhost/consent
+
+  kratos:
+    ports: !reset []
+    environment:
+      SERVE_PUBLIC_BASE_URL: https://localhost/user/api/
+      COOKIES_PATH: /
+      SELFSERVICE_DEFAULT_BROWSER_RETURN_URL: https://localhost/user/welcome
+      SELFSERVICE_ALLOWED_RETURN_URLS: https://localhost/user/,https://localhost/login,https://localhost/consent
+      SELFSERVICE_FLOWS_ERROR_UI_URL: https://localhost/user/error
+      SELFSERVICE_FLOWS_SETTINGS_UI_URL: https://localhost/user/settings
+      SELFSERVICE_FLOWS_RECOVERY_UI_URL: https://localhost/user/recovery
+      SELFSERVICE_FLOWS_VERIFICATION_UI_URL: https://localhost/user/verification
+      SELFSERVICE_FLOWS_LOGIN_UI_URL: https://localhost/user/login
+      SELFSERVICE_FLOWS_REGISTRATION_UI_URL: https://localhost/user/registration
+
+  kratos-selfservice-ui:
+    ports: !reset []
+    environment:
+      BASE_PATH: /user
+      KRATOS_BROWSER_URL: https://localhost/user/api/
+      COOKIE_SECURE: "true"
+
+  oidc-bridge:
+    ports: !reset []
+    environment:
+      GITSTORE_OIDC_BRIDGE__KRATOS__PUBLIC_BROWSER_URI: https://localhost/user/api
+
+  mailslurper:
+    ports: !reset []

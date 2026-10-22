@@ -174,7 +174,3 @@ services:
     depends_on:
       hydra:
         condition: service_healthy
-
-  controller-manager:
-    extra_hosts:
-      - "localhost:host-gateway"

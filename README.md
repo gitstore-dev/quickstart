@@ -5,7 +5,7 @@ against different profiles, without building from source.
 
 ## Prerequisites
 
-- Docker and Docker Compose v2
+- Docker and Docker Compose v2.24.4 or later (the proxy overlays use Compose reset tags)
 - `make`
 
 On Windows, run everything from inside [WSL2](https://learn.microsoft.com/windows/wsl/install) —
@@ -33,7 +33,7 @@ make ps
 
 ## Profiles
 
-The stack is selected with three independent `make` variables, and they combine freely.
+The stack is selected with four independent `make` variables, and they combine freely.
 `compose.local.yml` (static-users auth + the one-time credential bootstrap) is always
 included — it's the baseline every combination builds on, never swapped out.
 
@@ -42,6 +42,7 @@ included — it's the baseline every combination builds on, never swapped out.
 | `DATASTORE` | `memdb`, `scylla`  | `memdb` | Storage backend                                      |
 | `PROFILE`   | `single`, `cluster`| `single`| Only matters when `DATASTORE=scylla`                 |
 | `IDENTITY`  | `none`, `oidc`     | `none`  | Layers a demo OIDC IdP (Hydra+Kratos) in front of auth|
+| `PROXY`     | `none`, `caddy`    | `none`  | Opt-in HTTPS front door on host ports 80 and 443     |
 
 Examples:
 
@@ -52,12 +53,16 @@ make up DATASTORE=scylla PROFILE=cluster            # scylla cluster: 3-node Scy
 make up IDENTITY=oidc                               # oidc: memdb + static-users + demo Hydra/Kratos IdP
 make up DATASTORE=scylla IDENTITY=oidc              # scylla + oidc together
 make up DATASTORE=scylla PROFILE=cluster IDENTITY=oidc   # scylla cluster + oidc together
+make up PROXY=caddy                                 # HTTPS GraphQL and Git
+make up PROXY=caddy IDENTITY=oidc                   # HTTPS including identity and mail
 ```
 
-Each axis contributes its own override-only `gitstore.toml` under `configs/` — `api`,
-`controller-manager`, and `git-service` are started with `--config-file` passed once per
-file (base first, then each axis's override), and GitStore merges them
-([gitstore-dev/GitStore#442](https://github.com/gitstore-dev/GitStore/pull/442)). `git-service`
+Use the same variables for `down`, `logs`, `ps`, `config`, and `clean`. Run `make down`
+with the old selection before switching profiles or proxy mode; volumes are retained.
+
+Each configuration axis contributes an override-only `gitstore.toml` under `configs/`.
+`api` and `controller-manager` receive `--config-file` once per file, and GitStore merges
+them in order: the base file first, followed by the selected overrides. `git-service`
 only ever gets the base file — its CLI doesn't accept `--config-file` more than once, and it
 only reads settings no profile override changes.
 
@@ -87,6 +92,9 @@ into Hydra. There's no pre-seeded demo user — register one yourself at
 `http://localhost:4455/registration` (check `http://localhost:4436` for the dev mail catcher if
 a flow asks for email verification). The authn chain still includes `static-users` and the
 service-account chain entries, so the `local` bootstrap still runs underneath.
+
+Kratos connects to MailSlurper using implicit SMTP TLS (`smtps://`). The mail catcher's
+bundled development certificate is accepted only for that SMTP connection.
 
 Identities are matched by `preferred_username` (what you registered with — e.g. `demo-user`),
 not the raw Kratos subject UUID, specifically so you can recognize yourself in logs/tokens and
@@ -124,6 +132,116 @@ DSN, and base64's `/`/`+` breaks that).
 `oidc-bridge` ships from a separate optional-images pipeline from the core images, so it has
 its own `GITSTORE_OIDC_BRIDGE_TAG` (default `latest`) independent of `GITSTORE_TAG` — its tags
 can drift from the core images' release cadence.
+
+### HTTPS front door (opt-in)
+
+`make up PROXY=caddy` builds and starts Caddy. It is the only container publishing host
+ports in this mode: HTTP on **80** redirects to HTTPS on **443**, preserving request methods.
+These ports must be available. Without `PROXY=caddy`, the direct ports above remain in use.
+Database and gRPC ports are internal in every mode; database tools can run with
+`docker compose exec` on the relevant service.
+
+| Public HTTPS URL | Upstream |
+|------------------|----------|
+| `https://localhost/admin/api` | API GraphQL on `api:4000/graphql`, including subscriptions |
+| `https://localhost/<namespace>/<repository>[.git]` | Git Smart HTTP on `api:9000` |
+| `https://localhost/sso/` | Hydra public API / OIDC issuer |
+| `https://localhost/user/` | Kratos self-service UI (`/user/registration`, `/user/login`, etc.) |
+| `https://localhost/user/api/` | Kratos public API |
+| `https://localhost/login`, `https://localhost/consent` | OIDC bridge callbacks |
+| `https://localhost/mail/` | MailSlurper UI (its HTTP API is under `/mail/api/`) |
+| `https://localhost/admin/sso/clients` | Hydra admin API, operator Basic Auth required |
+| `https://localhost/admin/user/identities` | Kratos admin API, operator Basic Auth required |
+
+Identity/mail routes require `IDENTITY=oidc`. Bare `/sso`, `/user`, and `/mail` redirect to
+their trailing-slash forms. Other unmatched routes return 404. Git clone/fetch/push use the
+usual `info/refs`, `git-upload-pack`, and `git-receive-pack` paths below the repository URL.
+The service prefixes above are reserved; repositories under them cannot use those paths.
+
+`/admin/api` preserves GitStore's own authentication and RBAC. Its upstream currently remains
+`/graphql`; when GitStore introduces `/admin/graphql` and `/storefront/graphql`, only the
+admin rewrite needs changing here. Storefront, admin UI, and SSH ingress are not included.
+Internal enrollment and controller GraphQL URLs remain unchanged.
+
+#### Local certificate trust
+
+Caddy generates and renews a localhost certificate using its own local CA. Its CA and keys
+persist in the `proxy-data` volume. Only the **public** CA certificate is copied into
+`proxy-ca`, which the API container trusts for HTTPS OIDC discovery, JWKS, and userinfo.
+Controller-manager uses service-account authentication against the internal API and does not
+need OIDC issuer settings, host routing, or the proxy CA.
+HTTPS clients verify Caddy's certificate against that exported CA.
+
+Export the public CA after startup:
+
+```sh
+make proxy-ca PROXY=caddy # add IDENTITY=oidc if selected
+curl --cacert /tmp/gitstore-local-ca.crt https://localhost/admin/api \
+  -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}'
+git -c http.sslCAInfo=/tmp/gitstore-local-ca.crt clone https://localhost/my-namespace/my-repository.git
+```
+
+For browser-based registration/login, import that certificate into your local trusted root
+store (and the browser's certificate store if it uses a separate one). Trust is a manual
+host-side step; trusting the CA inside the Caddy container does not trust it on your computer.
+`make down PROXY=caddy` retains the CA. `make clean PROXY=caddy` removes it with the other
+selected volumes; export and trust the replacement certificate after the next startup.
+
+#### Dedicated identity operator
+
+Before using `PROXY=caddy IDENTITY=oidc`, generate a password hash interactively:
+
+```sh
+docker run --rm -it caddy:2.11.7-alpine caddy hash-password
+```
+
+Put the username and resulting hash in `.env`, **single-quoting the hash** to preserve its
+dollar signs:
+
+```dotenv
+GITSTORE_PROXY_OPERATOR_USERNAME=operator
+GITSTORE_PROXY_OPERATOR_PASSWORD_HASH='$2a$...'
+```
+
+There is no default password. Missing operator settings prevent this combination from
+starting. This account is separate from GitStore's demo admin and from registered Kratos
+users. It grants full access to both identity admin APIs; no additional roles are modeled.
+The proxy strips the operator Authorization header before forwarding to Ory.
+
+```sh
+# No credentials: 401. With --user operator, curl prompts for the password.
+curl --cacert /tmp/gitstore-local-ca.crt https://localhost/admin/sso/clients
+curl --cacert /tmp/gitstore-local-ca.crt --user operator https://localhost/admin/user/identities
+```
+
+Bridge and bootstrap containers still call the internal admin APIs directly, so operator
+credentials do not enter their configuration. The bridge itself needs browser-accessible
+`/login` and `/consent` routes, but has no host port binding in proxy mode.
+
+The proxy image includes a pinned `caddyserver/replace-response` module because MailSlurper
+hard-codes root-relative UI URLs and an API port. Replacements apply only to its UI HTML
+and application JavaScript; email bodies and attachments pass through unchanged. The first
+proxy build requires access to the Go module registry.
+
+#### Validation
+
+```sh
+python3 -m unittest discover -s tests -v
+make config PROXY=caddy IDENTITY=oidc
+```
+
+The automated Compose checks cover all datastore/identity/proxy combinations, published
+ports, and missing operator credentials without starting containers. For live verification,
+also check GraphQL queries/subscriptions, Git clone/fetch/push, OIDC registration and login,
+an authenticated GraphQL request, and mail inbox/message/attachment loading through HTTPS.
+
+The optional live HTTPS tests use `GITSTORE_TEST_PROXY_CA` (the exported certificate path).
+Set `GITSTORE_TEST_OPERATOR_USERNAME` and `GITSTORE_TEST_OPERATOR_PASSWORD` as well to check
+successful operator access. Set `GITSTORE_TEST_ADMIN_PASSWORD` (and optionally
+`GITSTORE_TEST_ADMIN_USERNAME`, default `admin`) to verify native GraphQL login and bearer
+authentication too. Run `python3 -m unittest discover -s tests -p test_proxy_live.py -v`.
+They check redirects, denied/allowed admin access, discovery/JWKS, registration, the OIDC
+login redirect chain, and MailSlurper UI/API routing without creating users or repositories.
 
 ## Configuration
 
