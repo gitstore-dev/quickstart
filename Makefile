@@ -2,16 +2,18 @@
 #   DATASTORE = memdb | scylla          (default: memdb)
 #   PROFILE   = single | cluster        (only relevant when DATASTORE=scylla)
 #   IDENTITY  = none | oidc             (default: none)
+#   PROXY     = none | caddy            (default: none)
 #
 # compose.local.yml (static-users auth + credential bootstrap) is always part of
 # the stack - every combination builds on it, it's never swapped out.
 #
 # Each axis contributes its own override-only gitstore.toml, combined via repeated
-# --config-file flags (GitStore merges them: github.com/gitstore-dev/GitStore#442).
+# --config-file flags (base first, then the selected overrides).
 # All combinations, including DATASTORE=scylla + IDENTITY=oidc, are supported.
 DATASTORE ?= memdb
 PROFILE   ?= single
 IDENTITY  ?= none
+PROXY     ?= none
 
 export GITSTORE_TAG ?= latest
 
@@ -19,14 +21,17 @@ SCYLLA_COMPOSE_FILE    = $(if $(filter cluster,$(PROFILE)),compose.scylla.cluste
 SCYLLA_CONFIG_FILE     = $(if $(filter cluster,$(PROFILE)),/etc/gitstore/scylla/gitstore.cluster.toml,/etc/gitstore/scylla/gitstore.scylla.toml)
 DATASTORE_COMPOSE_FILE = $(if $(filter scylla,$(DATASTORE)),-f $(SCYLLA_COMPOSE_FILE),)
 IDENTITY_COMPOSE_FILE  = $(if $(filter oidc,$(IDENTITY)),-f compose.oidc.yml,)
+PROXY_COMPOSE_FILES   = $(if $(filter caddy,$(PROXY)),-f compose.proxy.yml $(if $(filter oidc,$(IDENTITY)),-f compose.proxy.oidc.yml,),)
 
 DATASTORE_CONFIG_FILE = $(if $(filter scylla,$(DATASTORE)), $(SCYLLA_CONFIG_FILE),)
 IDENTITY_CONFIG_FILE  = $(if $(filter oidc,$(IDENTITY)), /etc/gitstore/oidc/gitstore.oidc.toml,)
 export CONFIG_FILES = /etc/gitstore/gitstore.toml$(DATASTORE_CONFIG_FILE)$(IDENTITY_CONFIG_FILE)
 
-COMPOSE = docker compose --profile local -f compose.yml -f compose.local.yml $(DATASTORE_COMPOSE_FILE) $(IDENTITY_COMPOSE_FILE)
+COMPOSE = docker compose --profile local -f compose.yml -f compose.local.yml $(DATASTORE_COMPOSE_FILE) $(IDENTITY_COMPOSE_FILE) $(PROXY_COMPOSE_FILES)
 
-.PHONY: help validate up down logs ps config pull clean
+.PHONY: help validate up down logs ps config pull clean proxy-ca
+
+CA_FILE ?= /tmp/gitstore-local-ca.crt
 
 .DEFAULT_GOAL := help
 
@@ -37,9 +42,10 @@ validate:
 	@case "$(DATASTORE)" in memdb|scylla) ;; *) echo "DATASTORE must be 'memdb' or 'scylla'" >&2; exit 2;; esac
 	@case "$(PROFILE)" in single|cluster) ;; *) echo "PROFILE must be 'single' or 'cluster'" >&2; exit 2;; esac
 	@case "$(IDENTITY)" in none|oidc) ;; *) echo "IDENTITY must be 'none' or 'oidc'" >&2; exit 2;; esac
+	@case "$(PROXY)" in none|caddy) ;; *) echo "PROXY must be 'none' or 'caddy'" >&2; exit 2;; esac
 
-up: validate ## Start the stack for the selected DATASTORE/PROFILE/IDENTITY combo
-	$(COMPOSE) up -d
+up: validate ## Start the selected DATASTORE/PROFILE/IDENTITY/PROXY combo
+	$(COMPOSE) up -d --build
 
 down: validate ## Stop the stack, keep volumes
 	$(COMPOSE) down
@@ -54,7 +60,11 @@ config: validate ## Print the fully resolved compose config for the combo
 	$(COMPOSE) config
 
 pull: validate ## Pull images for the selected combo without starting it
-	$(COMPOSE) pull
+	$(COMPOSE) pull --ignore-buildable
 
 clean: validate ## Stop the stack and remove its volumes (destroys repo data, signing keys, demo DB state)
 	$(COMPOSE) down -v
+
+proxy-ca: validate ## Export Caddy's public CA certificate (PROXY=caddy; CA_FILE overrides destination)
+	@test "$(PROXY)" = caddy || { echo "proxy-ca requires PROXY=caddy" >&2; exit 2; }
+	$(COMPOSE) cp proxy:/trust/root.crt "$(CA_FILE)"

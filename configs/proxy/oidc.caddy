@@ -1,0 +1,82 @@
+# These routes are imported inside the main ordered route block.
+@identityAdmin path /admin/sso /admin/sso/* /admin/user /admin/user/*
+handle @identityAdmin {
+	basic_auth {
+		{env.GITSTORE_PROXY_OPERATOR_USERNAME} {env.GITSTORE_PROXY_OPERATOR_PASSWORD_HASH}
+	}
+	route {
+		handle /admin/sso* {
+			# Ory admin APIs themselves use /admin/... paths.
+			uri replace /admin/sso /admin 1
+			reverse_proxy hydra:4445 {
+				header_up -Authorization
+			}
+		}
+		handle /admin/user* {
+			uri replace /admin/user /admin 1
+			reverse_proxy kratos:4434 {
+				header_up -Authorization
+			}
+		}
+	}
+}
+
+redir /sso /sso/ 308
+redir /user /user/ 308
+redir /mail /mail/ 308
+
+@oryAdmin path /admin /admin/*
+handle_path /sso/* {
+	respond @oryAdmin "Not found" 404
+	reverse_proxy hydra:4444 {
+		# Ory runs in demo mode internally; browser cookies still require HTTPS.
+		header_down Set-Cookie "^(.+)$" "$1; Secure"
+	}
+}
+
+handle_path /user/api/* {
+	# Kratos's public listener redirects some admin URLs; expose them only via Basic Auth.
+	respond @oryAdmin "Not found" 404
+	reverse_proxy kratos:4433 {
+		header_down Set-Cookie "^(.+)$" "$1; Secure"
+	}
+}
+
+handle /user/* {
+	# BASE_PATH makes the UI generate links and assets under /user.
+	reverse_proxy kratos-selfservice-ui:3000 {
+		header_down Set-Cookie "^(.+)$" "$1; Secure"
+	}
+}
+
+@bridge path /login /consent
+handle @bridge {
+	# Preserve the path: the bridge uses it to construct its return_to URL.
+	reverse_proxy oidc-bridge:4445
+}
+
+handle_path /mail/api/* {
+	# Never rewrite message bodies or attachments.
+	reverse_proxy mailslurper:4437
+}
+
+handle_path /mail/* {
+	route {
+		# Prefix HTML links/assets, but never API-relative suffixes in JavaScript.
+		@mailHTML path / /admin /savedsearches
+		replace @mailHTML {
+			re `"/([^/])` `"/mail/$1`
+			re `'/([^/])` `'/mail/$1`
+		}
+		@mailScripts path /www/mailslurper/js/*
+		replace @mailScripts {
+			re `(url:\s*["'])/` `$1/mail/`
+			re `(window\.location\s*=\s*["'])/` `$1/mail/`
+			re `(["'])/www/` `$1/mail/www/`
+			`var serviceURL = protocol + "//" + serviceAddress + ":" + serviceSettings.servicePort;` `var serviceURL = window.location.origin + "/mail/api";`
+		}
+		reverse_proxy mailslurper:4436 {
+			header_up Accept-Encoding identity
+		}
+	}
+}

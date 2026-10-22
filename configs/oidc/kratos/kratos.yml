@@ -19,7 +19,8 @@ identity:
       url: file:///etc/config/kratos/identity.schema.json
 courier:
   smtp:
-    connection_uri: smtp://mailslurper:1025/
+    # The local MailSlurper image uses implicit TLS and a bundled demo certificate.
+    connection_uri: smtps://test:test@mailslurper:1025/?skip_ssl_verify=true
 selfservice:
   default_browser_return_url: http://localhost:4455/welcome
   allowed_return_urls:

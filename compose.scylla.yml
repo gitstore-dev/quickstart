@@ -2,8 +2,6 @@ services:
   scylla:
     image: scylladb/scylla:2026.1
     command: ["--developer-mode=1", "--overprovisioned=1", "--smp=1"]
-    ports:
-      - "${GITSTORE_HOST_SCYLLA_PORT:-9042}:9042"
     volumes:
       - scylla-data:/var/lib/scylla
     healthcheck:
