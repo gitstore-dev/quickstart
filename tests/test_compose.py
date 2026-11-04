@@ -57,7 +57,7 @@ class ComposePortsTest(unittest.TestCase):
                         services = json.loads(conversion.stdout)["services"]
                         controller = services["controller-manager"]
                         self.assertNotIn("extra_hosts", controller)
-                        self.assertNotIn("GITSTORE_AUTH__OIDC__ISSUER_URI", controller.get("environment", {}))
+                        self.assertNotIn("GITSTORE_API__AUTH__OIDC_JWT__ISSUER_URI", controller.get("environment", {}))
                         self.assertNotIn("SSL_CERT_FILE", controller.get("environment", {}))
                         self.assertFalse(any(v.get("target") == "/run/proxy-ca"
                                              for v in controller["volumes"]))
@@ -69,7 +69,7 @@ class ComposePortsTest(unittest.TestCase):
                             self.assertEqual(published, {"proxy": [80, 443]})
                             if identity == "oidc":
                                 api = services["api"]
-                                self.assertEqual(api["environment"]["GITSTORE_AUTH__OIDC__ISSUER_URI"],
+                                self.assertEqual(api["environment"]["GITSTORE_API__AUTH__OIDC_JWT__ISSUER_URI"],
                                                  "https://localhost/sso/")
                                 self.assertEqual(api["depends_on"]["proxy"]["condition"], "service_healthy")
                                 self.assertNotIn("depends_on", services["proxy"])
