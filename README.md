@@ -254,12 +254,20 @@ login redirect chain, and MailSlurper UI/API routing without creating users or r
   override (merged on top of the base when `IDENTITY=oidc`)
 - `configs/users.yaml`, `configs/policy.yaml` — shared static-users directory and RBAC policy
 
+GitStore 0.1.0-alpha.6 and later reject the legacy configuration names rather than silently
+falling back. The quickstart uses service-grouped TOML sections (`git_service`, `api`, and
+`controller`), shared `grpc_auth` and `push_limits` sections, duration/IEC-size values, and the
+v1beta1 local-RBAC policy format. The Scylla overlays configure `api.datastore` and
+`api.watch.journal`; the namespace repository fence is always enabled and has no setting.
+
 ## Image tags
 
 All images default to the `latest` tag on `ghcr.io/gitstore-dev/*`, which tracks GitStore's
 newest build pre-GA. After the first stable (non-prerelease) release ships, `latest` stops
 moving on prereleases — pin `GITSTORE_TAG` in `.env` once you depend on this for more than a
 quick local test.
+Release image tags omit the Git tag's leading `v`; for example, pin alpha.8 as
+`GITSTORE_TAG=0.1.0-alpha.8`.
 
 ## Known limitations
 

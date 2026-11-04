@@ -2,10 +2,10 @@
 # (api/controller-manager/git-service are started with --config-file passed
 # twice: the base file, then this one).
 
-[auth.authn]
+[api.auth.authn]
 chain = ["oidc-jwt", "static-users", "serviceaccount-assertion", "serviceaccount-jwt", "anonymous"]
 
-[auth.oidc]
+[api.auth.oidc_jwt]
 # "localhost" here is deliberate, not a mistake: tokens carry iss=http://localhost:4444/
 # (the browser-reachable Hydra issuer URL), so the api container resolves it to the host
 # via `extra_hosts: ["localhost:host-gateway"]` in compose.oidc.yml.
