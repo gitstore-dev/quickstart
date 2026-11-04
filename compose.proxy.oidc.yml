@@ -9,7 +9,7 @@ services:
 
   api:
     environment:
-      GITSTORE_AUTH__OIDC__ISSUER_URI: https://localhost/sso/
+      GITSTORE_API__AUTH__OIDC_JWT__ISSUER_URI: https://localhost/sso/
       SSL_CERT_FILE: /run/proxy-ca/root.crt
     volumes:
       - proxy-ca:/run/proxy-ca:ro

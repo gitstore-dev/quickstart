@@ -45,7 +45,9 @@ class ReleaseConfigTest(unittest.TestCase):
         self.assertIn("GITSTORE_API__AUTH__SERVICEACCOUNT__SIGNING_KEY", compose)
         self.assertNotIn("GITSTORE_AUTH__SERVICEACCOUNT__SIGNING_KEY", compose)
         self.assertIn("--record-output-path /run/controller-secrets/gitstore-controller-manager-signing-key.json", compose)
-        self.assertIn("--private-key-path /run/controller-secrets/gitstore-controller-manager-signing-key/privateKey", compose)
+        self.assertIn("/run/controller-secrets/gitstore-controller-manager-signing-key/privateKey", compose)
+        self.assertIn('migration_dir="$$controller_key_dir.migration"', compose)
+        self.assertIn('mv "$$controller_key_dir" "$$migration_dir/privateKey"', compose)
 
 
 if __name__ == "__main__":

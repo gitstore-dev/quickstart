@@ -102,17 +102,19 @@ know what to type into `policy.yaml`.
 
 **Granting yourself any permission is a manual step — this is a real GitStore limitation, not
 something this quickstart works around.** GitStore deliberately never derives roles from OIDC
-claims (importing a `roles` claim would let any issuer mint local admin with no `role_bindings`
+claims (importing a `roles` claim would let any issuer mint local admin with no local binding
 entry — a security decision, not an oversight; see GitStore's
 `specs/059-optional-oidc-provider/spec.md`). A freshly self-registered user authenticates fine
-and gets zero permissions (`default_deny: true`, no matching binding). To grant yourself access
+and gets zero permissions (`defaultDeny: true`, no matching binding). To grant yourself access
 after registering:
 
 ```yaml
 # configs/policy.yaml
-role_bindings:
-  your-username:   # whatever you registered with (preferred_username)
-    - admin
+# Add this item to the existing clusterRoleBindings list:
+- roleRef: {kind: ClusterRole, name: admin}
+  subjects:
+    - kind: User
+      name: your-username  # whatever you registered with (preferred_username)
 ```
 
 Then apply it — policy changes are picked up on `SIGHUP`, not automatically on file save:

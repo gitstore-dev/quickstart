@@ -7,10 +7,21 @@ services:
       - -ec
       - |
         rm -f /run/controller-bootstrap/serviceaccount.env
+        controller_key_dir=/run/controller-secrets/gitstore-controller-manager-signing-key
+        migration_dir="$$controller_key_dir.migration"
+        if [ -f "$$controller_key_dir" ]; then
+          test ! -e "$$migration_dir"
+          mkdir "$$migration_dir"
+          mv "$$controller_key_dir" "$$migration_dir/privateKey"
+        fi
+        if [ -d "$$migration_dir" ]; then
+          test ! -e "$$controller_key_dir"
+          mv "$$migration_dir" "$$controller_key_dir"
+        fi
         /app/gitctl generate-signing-key --private-key-path /run/api-issuer/serviceaccount-signing-key
-        mkdir -p /run/controller-secrets/gitstore-controller-manager-signing-key
+        mkdir -p "$$controller_key_dir"
         /app/gitctl generate-signing-key \
-          --private-key-path /run/controller-secrets/gitstore-controller-manager-signing-key/privateKey \
+          --private-key-path "$$controller_key_dir/privateKey" \
           --record-output-path /run/controller-secrets/gitstore-controller-manager-signing-key.json \
           --key-id controller-key
     volumes:
