@@ -15,7 +15,7 @@ localhost {
 		@graphql path /admin/api /admin/api/
 		handle @graphql {
 			# Keep GitStore's native authn/RBAC, including bearer tokens.
-			rewrite * /graphql
+			rewrite * /admin/graphql
 			reverse_proxy api:4000
 		}
 

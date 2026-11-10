@@ -21,8 +21,8 @@ make up
 ```
 
 This brings up the `local` profile: `git-service`, `api`, `controller-manager`, a single
-static-users admin account (`admin` / `admin123`), and the in-memory (`memdb`) datastore. The API
-is at `http://localhost:4000/graphql`, raw git-over-HTTP at `http://localhost:9000`.
+static-users admin account (`admin` / `admin123`), and the in-memory (`memdb`) datastore. The Admin
+API is at `http://localhost:4000/admin/graphql`, raw git-over-HTTP at `http://localhost:9000`.
 
 ```sh
 make down   # stop, keep volumes
@@ -145,7 +145,7 @@ Database and gRPC ports are internal in every mode; database tools can run with
 
 | Public HTTPS URL | Upstream |
 |------------------|----------|
-| `https://localhost/admin/api` | API GraphQL on `api:4000/graphql`, including subscriptions |
+| `https://localhost/admin/api` | Admin GraphQL on `api:4000/admin/graphql`, including subscriptions |
 | `https://localhost/<namespace>/<repository>[.git]` | Git Smart HTTP on `api:9000` |
 | `https://localhost/sso/` | Hydra public API / OIDC issuer |
 | `https://localhost/user/` | Kratos self-service UI (`/user/registration`, `/user/login`, etc.) |
@@ -160,10 +160,11 @@ their trailing-slash forms. Other unmatched routes return 404. Git clone/fetch/p
 usual `info/refs`, `git-upload-pack`, and `git-receive-pack` paths below the repository URL.
 The service prefixes above are reserved; repositories under them cannot use those paths.
 
-`/admin/api` preserves GitStore's own authentication and RBAC. Its upstream currently remains
-`/graphql`; when GitStore introduces `/admin/graphql` and `/storefront/graphql`, only the
-admin rewrite needs changing here. Storefront, admin UI, and SSH ingress are not included.
-Internal enrollment and controller GraphQL URLs remain unchanged.
+`/admin/api` preserves GitStore's own authentication and RBAC, while rewriting to GitStore's
+Admin GraphQL endpoint. The quickstart intentionally does not publish the separate Storefront
+listener; it remains fail-closed until publication support is useful. Admin UI and SSH ingress
+are not included. Internal enrollment and controller clients connect directly to the same
+Admin endpoint.
 
 #### Local certificate trust
 
