@@ -1,4 +1,4 @@
-"""Regression checks for the GitStore 0.1.0-alpha.6+ configuration contract."""
+"""Regression checks for the GitStore 0.1.0-alpha.10 configuration contract."""
 
 from pathlib import Path
 import tomllib
@@ -14,12 +14,25 @@ class ReleaseConfigTest(unittest.TestCase):
             config = tomllib.load(config_file)
 
         self.assertEqual(config["git_service"]["grpc_port"], 50051)
+        self.assertEqual(config["api"]["admin_port"], 4000)
+        self.assertEqual(config["api"]["storefront_port"], 4001)
         self.assertEqual(config["api"]["datastore"]["backend"], "memdb")
         self.assertEqual(config["api"]["auth"]["jwt"]["ttl"], "24h")
         self.assertEqual(config["grpc_auth"]["hmac_secret"], "local-development-grpc-hmac-secret")
         self.assertEqual(config["push_limits"], {"max_pack_size": "512MiB", "max_file_size": "100MiB"})
         self.assertNotIn("features", config)
         self.assertNotIn("datastore", config)
+        self.assertNotIn("port", config["api"])
+
+    def test_admin_graphql_consumers_use_the_named_admin_endpoint(self):
+        config = (ROOT / "configs/gitstore.toml").read_text()
+        compose = (ROOT / "compose.local.yml").read_text()
+        caddy = (ROOT / "configs/proxy/Caddyfile").read_text()
+
+        self.assertIn('api_uri = "http://api:4000/admin/graphql"', config)
+        self.assertIn("http://api:4000/admin/graphql", compose)
+        self.assertIn("rewrite * /admin/graphql", caddy)
+        self.assertNotIn("rewrite * /graphql", caddy)
 
     def test_scylla_overlays_use_journal_contract(self):
         for name in ("gitstore.scylla.toml", "gitstore.cluster.toml"):
