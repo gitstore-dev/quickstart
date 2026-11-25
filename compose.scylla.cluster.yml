@@ -9,7 +9,9 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
-    networks: [gitstore]
+    networks:
+      gitstore:
+        ipv4_address: ${SCYLLA_CLUSTER_NODE_1_IP:-${SCYLLA_CLUSTER_SUBNET_PREFIX:-172.30.11}.11}
 
   scylla-2:
     image: scylladb/scylla:2026.1
@@ -24,7 +26,9 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
-    networks: [gitstore]
+    networks:
+      gitstore:
+        ipv4_address: ${SCYLLA_CLUSTER_NODE_2_IP:-${SCYLLA_CLUSTER_SUBNET_PREFIX:-172.30.11}.12}
 
   scylla-3:
     image: scylladb/scylla:2026.1
@@ -39,7 +43,9 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
-    networks: [gitstore]
+    networks:
+      gitstore:
+        ipv4_address: ${SCYLLA_CLUSTER_NODE_3_IP:-${SCYLLA_CLUSTER_SUBNET_PREFIX:-172.30.11}.13}
 
   scylla-init:
     image: scylladb/scylla:2026.1
@@ -71,3 +77,11 @@ volumes:
   scylla-1-data:
   scylla-2-data:
   scylla-3-data:
+
+# Scylla persists peer IPs in its data volumes. Keep each node at the same
+# address when Compose recreates containers or the network after `down`.
+networks:
+  gitstore:
+    ipam:
+      config:
+        - subnet: ${SCYLLA_CLUSTER_SUBNET_PREFIX:-172.30.11}.0/24

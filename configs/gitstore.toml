@@ -18,8 +18,8 @@ timeout = "10s"
 branch_pattern = "^refs/heads/main$"
 
 [api]
-# GitStore alpha.9+ serves the admin and storefront GraphQL schemas on
-# separate listeners. The quickstart exposes only the admin listener.
+# Default API roles serve Smart HTTP, catalog, and Admin.
+# Storefront is disabled; the quickstart exposes only the Admin GraphQL listener.
 admin_port = 4000
 storefront_port = 4001
 git_port = 9000
@@ -42,7 +42,7 @@ backend = "memdb"
 [api.auth.static_users]
 users_file = "/etc/gitstore/users.yaml"
 
-[api.auth.jwt]
+[api.auth.static_users.jwt]
 secret = "local-development-jwt-secret-at-least-32-characters"
 ttl = "24h"
 issuer = "gitstore"

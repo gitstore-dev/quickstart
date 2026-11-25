@@ -26,6 +26,7 @@ PROXY_COMPOSE_FILES   = $(if $(filter caddy,$(PROXY)),-f compose.proxy.yml $(if 
 DATASTORE_CONFIG_FILE = $(if $(filter scylla,$(DATASTORE)), $(SCYLLA_CONFIG_FILE),)
 IDENTITY_CONFIG_FILE  = $(if $(filter oidc,$(IDENTITY)), /etc/gitstore/oidc/gitstore.oidc.toml,)
 export CONFIG_FILES = /etc/gitstore/gitstore.toml$(DATASTORE_CONFIG_FILE)$(IDENTITY_CONFIG_FILE)
+export API_CONFIG_ARGS = $(foreach file,$(CONFIG_FILES),--config-file $(file))
 
 COMPOSE = docker compose --profile local -f compose.yml -f compose.local.yml $(DATASTORE_COMPOSE_FILE) $(IDENTITY_COMPOSE_FILE) $(PROXY_COMPOSE_FILES)
 

@@ -71,6 +71,8 @@ only reads settings no profile override changes.
 Memdb datastore, static-users auth. On first `make up`, `credential-bootstrap` generates the
 service-account signing keys and `serviceaccount-enrollment` registers `controller-manager`'s
 service account with `api` — both one-shot, both re-run safely on every `up`.
+The bootstrap helper adds an Alpine shell around the published API binary; no GitStore
+source compilation is needed. The API itself runs directly from its published image.
 
 Demo login: `admin` / `admin123` (`configs/users.yaml`). Change the password with
 `make hash-user-password PASSWORD=...` in GitStore's own repo and update the hash in
@@ -82,6 +84,13 @@ Demo login: `admin` / `admin123` (`configs/users.yaml`). Change the password wit
 developer-mode) and creates the `gitstore` keyspace (RF=1) before `api`/`controller-manager`
 start. `make up DATASTORE=scylla PROFILE=cluster` runs a 3-node cluster instead
 (`NetworkTopologyStrategy`, RF=3). Same static-users auth as `local`.
+
+Cluster nodes use stable addresses on `172.30.11.0/24` so retained data survives
+container and network recreation. If that subnet is already in use, set
+`SCYLLA_CLUSTER_SUBNET_PREFIX` before the first run. When adopting this configuration
+with existing cluster volumes, set the prefix and `SCYLLA_CLUSTER_NODE_1_IP` through
+`SCYLLA_CLUSTER_NODE_3_IP` to each node's previous address (from `system.local` or
+its startup logs). Keep these addresses unchanged while retaining the volumes.
 
 ### oidc
 
@@ -131,9 +140,7 @@ Requires secrets in `.env` with no defaults (see `env.example`) — generate eac
 `openssl rand -hex 32` (hex, not base64 — two of these land directly in an unencoded postgres
 DSN, and base64's `/`/`+` breaks that).
 
-`oidc-bridge` ships from a separate optional-images pipeline from the core images, so it has
-its own `GITSTORE_OIDC_BRIDGE_TAG` (default `latest`) independent of `GITSTORE_TAG` — its tags
-can drift from the core images' release cadence.
+`oidc-bridge` follows `GITSTORE_TAG`. Set `GITSTORE_OIDC_BRIDGE_TAG` only to override it.
 
 ### HTTPS front door (opt-in)
 
@@ -257,8 +264,7 @@ login redirect chain, and MailSlurper UI/API routing without creating users or r
   override (merged on top of the base when `IDENTITY=oidc`)
 - `configs/users.yaml`, `configs/policy.yaml` — shared static-users directory and RBAC policy
 
-GitStore 0.1.0-alpha.6 and later reject the legacy configuration names rather than silently
-falling back. The quickstart uses service-grouped TOML sections (`git_service`, `api`, and
+The quickstart uses service-grouped TOML sections (`git_service`, `api`, and
 `controller`), shared `grpc_auth` and `push_limits` sections, duration/IEC-size values, and the
 v1beta1 local-RBAC policy format. The Scylla overlays configure `api.datastore` and
 `api.watch.journal`; the namespace repository fence is always enabled and has no setting.
@@ -269,8 +275,8 @@ All images default to the `latest` tag on `ghcr.io/gitstore-dev/*`, which tracks
 newest build pre-GA. After the first stable (non-prerelease) release ships, `latest` stops
 moving on prereleases — pin `GITSTORE_TAG` in `.env` once you depend on this for more than a
 quick local test.
-Release image tags omit the Git tag's leading `v`; for example, pin alpha.8 as
-`GITSTORE_TAG=0.1.0-alpha.8`.
+Release image tags omit the Git tag's leading `v`; for example,
+`GITSTORE_TAG=0.1.0-alpha.11`.
 
 ## Known limitations
 

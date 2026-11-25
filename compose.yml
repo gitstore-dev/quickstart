@@ -14,16 +14,7 @@ services:
 
   api:
     image: ghcr.io/gitstore-dev/api:${GITSTORE_TAG:-latest}
-    environment:
-      - CONFIG_FILES
-    command:
-      - /bin/sh
-      - -ec
-      - |
-        : "$${CONFIG_FILES:=/etc/gitstore/gitstore.toml}"
-        set --
-        for f in $$CONFIG_FILES; do set -- "$$@" --config-file "$$f"; done
-        exec /app/api "$$@"
+    command: /app/api ${API_CONFIG_ARGS:---config-file /etc/gitstore/gitstore.toml}
     ports:
       - "${GITSTORE_HOST_API_GRAPHQL_PORT:-4000}:4000"
       - "${GITSTORE_HOST_API_GIT_PORT:-9000}:9000"
@@ -34,10 +25,12 @@ services:
       git-service:
         condition: service_started
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4000/ready"]
+      test: ["CMD", "/app/api", "gitctl", "healthcheck"]
+      # Fresh Scylla clusters need time for schema migrations before listening.
+      start_period: 120s
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 30
     networks: [gitstore]
 
   controller-manager:
