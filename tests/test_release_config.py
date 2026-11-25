@@ -1,4 +1,4 @@
-"""Regression checks for the GitStore 0.1.0-alpha.10 configuration contract."""
+"""Regression checks for the GitStore 0.1.0-alpha.11 configuration contract."""
 
 from pathlib import Path
 import tomllib
@@ -17,7 +17,13 @@ class ReleaseConfigTest(unittest.TestCase):
         self.assertEqual(config["api"]["admin_port"], 4000)
         self.assertEqual(config["api"]["storefront_port"], 4001)
         self.assertEqual(config["api"]["datastore"]["backend"], "memdb")
-        self.assertEqual(config["api"]["auth"]["jwt"]["ttl"], "24h")
+        self.assertEqual(config["api"]["auth"]["static_users"]["jwt"], {
+            "secret": "local-development-jwt-secret-at-least-32-characters",
+            "ttl": "24h",
+            "issuer": "gitstore",
+            "refresh_grace": "60s",
+        })
+        self.assertNotIn("jwt", config["api"]["auth"])
         self.assertEqual(config["grpc_auth"]["hmac_secret"], "local-development-grpc-hmac-secret")
         self.assertEqual(config["push_limits"], {"max_pack_size": "512MiB", "max_file_size": "100MiB"})
         self.assertNotIn("features", config)
@@ -53,10 +59,12 @@ class ReleaseConfigTest(unittest.TestCase):
         self.assertIn("resources: [product/management]", policy)
         self.assertIn("verbs: [read, list]", policy)
 
-    def test_bootstrap_uses_renamed_serviceaccount_variable(self):
+    def test_bootstrap_supports_the_shell_free_api_image(self):
         compose = (ROOT / "compose.local.yml").read_text()
-        self.assertIn("GITSTORE_API__AUTH__SERVICEACCOUNT__SIGNING_KEY", compose)
-        self.assertNotIn("GITSTORE_AUTH__SERVICEACCOUNT__SIGNING_KEY", compose)
+        self.assertIn("--serviceaccount-signing-key-file /run/secrets/serviceaccount-signing-key", compose)
+        self.assertIn("/app/api gitctl generate-signing-key", compose)
+        self.assertNotIn("/app/gitctl", compose)
+        self.assertIn("chown 65532:65532 /run/api-issuer/serviceaccount-signing-key", compose)
         self.assertIn("--record-output-path /run/controller-secrets/gitstore-controller-manager-signing-key.json", compose)
         self.assertIn("/run/controller-secrets/gitstore-controller-manager-signing-key/privateKey", compose)
         self.assertIn('migration_dir="$$controller_key_dir.migration"', compose)

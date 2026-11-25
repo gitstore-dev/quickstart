@@ -18,8 +18,14 @@ SECRETS = (
 )
 
 
-def compose(datastore="memdb", profile="single", identity="none", proxy="none", operator=True):
+def compose(datastore="memdb", profile="single", identity="none", proxy="none", operator=True,
+            tag="latest", bridge_tag="", cluster_prefix="172.30.11", cluster_ips=None):
     env = os.environ.copy()
+    env["GITSTORE_TAG"] = tag
+    env["GITSTORE_OIDC_BRIDGE_TAG"] = bridge_tag
+    env["SCYLLA_CLUSTER_SUBNET_PREFIX"] = cluster_prefix
+    for i in range(1, 4):
+        env[f"SCYLLA_CLUSTER_NODE_{i}_IP"] = cluster_ips[i - 1] if cluster_ips else ""
     env.update({name: "test-only-" + "a" * 32 for name in SECRETS})
     env["GITSTORE_PROXY_OPERATOR_USERNAME"] = "operator" if operator else ""
     env["GITSTORE_PROXY_OPERATOR_PASSWORD_HASH"] = (
@@ -40,6 +46,20 @@ def compose(datastore="memdb", profile="single", identity="none", proxy="none", 
 
 
 class ComposePortsTest(unittest.TestCase):
+    def test_coordinated_release_tags_and_bridge_override(self):
+        for tag, bridge_tag, expected in (
+            ("latest", "", "latest"),
+            ("0.1.0-alpha.11", "", "0.1.0-alpha.11"),
+            ("0.1.0-alpha.11", "custom-bridge", "custom-bridge"),
+        ):
+            with self.subTest(tag=tag, bridge_tag=bridge_tag):
+                result = compose(identity="oidc", tag=tag, bridge_tag=bridge_tag)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                for image in ("api", "git-service", "controller-manager"):
+                    self.assertIn(f"image: ghcr.io/gitstore-dev/{image}:{tag}", result.stdout)
+                self.assertIn(f"image: gitstore-quickstart-bootstrap:{tag}", result.stdout)
+                self.assertIn(f"image: ghcr.io/gitstore-dev/oidc-bridge:{expected}", result.stdout)
+
     def test_all_profile_combinations(self):
         for datastore, profile in (("memdb", "single"), ("scylla", "single"), ("scylla", "cluster")):
             for identity in ("none", "oidc"):
@@ -54,7 +74,31 @@ class ComposePortsTest(unittest.TestCase):
                             input=result.stdout, cwd=ROOT, text=True, capture_output=True,
                         )
                         self.assertEqual(conversion.returncode, 0, conversion.stderr)
-                        services = json.loads(conversion.stdout)["services"]
+                        resolved = json.loads(conversion.stdout)
+                        services = resolved["services"]
+                        if datastore == "scylla" and profile == "cluster":
+                            self.assertEqual(resolved["networks"]["gitstore"]["ipam"]["config"],
+                                             [{"subnet": "172.30.11.0/24"}])
+                            for i in range(1, 4):
+                                self.assertEqual(services[f"scylla-{i}"]["networks"]["gitstore"]["ipv4_address"],
+                                                 f"172.30.11.{10 + i}")
+                        else:
+                            self.assertNotIn("ipam", resolved["networks"]["gitstore"])
+                        api = services["api"]
+                        expected_configs = ["/etc/gitstore/gitstore.toml"]
+                        if datastore == "scylla":
+                            suffix = "cluster" if profile == "cluster" else "scylla"
+                            expected_configs.append(f"/etc/gitstore/scylla/gitstore.{suffix}.toml")
+                        if identity == "oidc":
+                            expected_configs.append("/etc/gitstore/oidc/gitstore.oidc.toml")
+                        self.assertEqual(api["command"], ["/app/api"] + [
+                            arg for path in expected_configs for arg in ("--config-file", path)
+                        ] + ["--serviceaccount-signing-key-file", "/run/secrets/serviceaccount-signing-key"])
+                        self.assertEqual(api["healthcheck"]["test"],
+                                         ["CMD", "/app/api", "gitctl", "healthcheck"])
+                        self.assertEqual(services["serviceaccount-enrollment"]["command"][:3],
+                                         ["/app/api", "gitctl", "enroll-serviceaccount"])
+                        self.assertEqual(services["serviceaccount-enrollment"]["user"], "0:0")
                         controller = services["controller-manager"]
                         self.assertNotIn("extra_hosts", controller)
                         self.assertNotIn("GITSTORE_API__AUTH__OIDC_JWT__ISSUER_URI", controller.get("environment", {}))
@@ -82,6 +126,15 @@ class ComposePortsTest(unittest.TestCase):
                                                 **{"kratos-selfservice-ui": [4455],
                                                    "oidc-bridge": [4445], "mailslurper": [4436]})
                             self.assertEqual(published, expected)
+
+    def test_cluster_subnet_and_existing_node_addresses_can_be_preserved(self):
+        addresses = ["172.30.12.21", "172.30.12.24", "172.30.12.25"]
+        result = compose(datastore="scylla", profile="cluster", cluster_prefix="172.30.12",
+                         cluster_ips=addresses)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("subnet: 172.30.12.0/24", result.stdout)
+        for address in addresses:
+            self.assertIn(f"ipv4_address: {address}", result.stdout)
 
     def test_operator_is_required_only_for_proxied_oidc(self):
         for identity, proxy, success in (("oidc", "caddy", False), ("none", "caddy", True),

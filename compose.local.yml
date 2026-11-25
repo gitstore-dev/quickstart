@@ -1,7 +1,11 @@
 services:
   credential-bootstrap:
     profiles: [local]
-    image: ghcr.io/gitstore-dev/api:${GITSTORE_TAG:-latest}
+    image: gitstore-quickstart-bootstrap:${GITSTORE_TAG:-latest}
+    build:
+      context: ./docker/bootstrap
+      args:
+        GITSTORE_TAG: ${GITSTORE_TAG:-latest}
     command:
       - /bin/sh
       - -ec
@@ -18,9 +22,10 @@ services:
           test ! -e "$$controller_key_dir"
           mv "$$migration_dir" "$$controller_key_dir"
         fi
-        /app/gitctl generate-signing-key --private-key-path /run/api-issuer/serviceaccount-signing-key
+        /app/api gitctl generate-signing-key --private-key-path /run/api-issuer/serviceaccount-signing-key
+        chown 65532:65532 /run/api-issuer/serviceaccount-signing-key
         mkdir -p "$$controller_key_dir"
-        /app/gitctl generate-signing-key \
+        /app/api gitctl generate-signing-key \
           --private-key-path "$$controller_key_dir/privateKey" \
           --record-output-path /run/controller-secrets/gitstore-controller-manager-signing-key.json \
           --key-id controller-key
@@ -33,11 +38,14 @@ services:
   serviceaccount-enrollment:
     profiles: [local]
     image: ghcr.io/gitstore-dev/api:${GITSTORE_TAG:-latest}
+    # Only enrollment needs to read the root-owned controller key and write its identity.
+    user: "0:0"
     environment:
       GITSTORE_BOOTSTRAP_ADMIN_USERNAME: ${GITSTORE_BOOTSTRAP_ADMIN_USERNAME:-admin}
       GITSTORE_BOOTSTRAP_ADMIN_PASSWORD: ${GITSTORE_BOOTSTRAP_ADMIN_PASSWORD:-admin123}
     command:
-      - /app/gitctl
+      - /app/api
+      - gitctl
       - enroll-serviceaccount
       - --api-url
       - http://api:4000/admin/graphql
@@ -59,19 +67,9 @@ services:
     networks: [gitstore]
 
   api:
-    environment:
-      - CONFIG_FILES
-    command:
-      - /bin/sh
-      - -ec
-      - |
-        : "$${CONFIG_FILES:=/etc/gitstore/gitstore.toml}"
-        if [ -f /run/secrets/serviceaccount-signing-key ]; then
-          export GITSTORE_API__AUTH__SERVICEACCOUNT__SIGNING_KEY="$$(cat /run/secrets/serviceaccount-signing-key)"
-        fi
-        set --
-        for f in $$CONFIG_FILES; do set -- "$$@" --config-file "$$f"; done
-        exec /app/api "$$@"
+    command: >-
+      /app/api ${API_CONFIG_ARGS:---config-file /etc/gitstore/gitstore.toml}
+      --serviceaccount-signing-key-file /run/secrets/serviceaccount-signing-key
     volumes:
       - api-serviceaccount-issuer-key:/run/secrets:ro
     depends_on:
